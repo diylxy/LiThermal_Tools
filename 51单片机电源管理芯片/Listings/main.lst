@@ -1,0 +1,335 @@
+C51 COMPILER V9.60.7.0   MAIN                                                              09/14/2024 21:24:23 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main
+                    -.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <STC8G.H>
+   2          #include "intrins.h"
+   3          
+   4          #define FOSC            11059200UL
+   5          #define BRT             (65536 - FOSC / 115200 / 4)
+   6          
+   7          
+   8          int *BGV;                                       //�ڲ�1.19V�ο��ź�Դֵ�����idata�
+             -�
+   9                                                          //idata��EFH��ַ��Ÿ��ֽ�
+  10                                                          //idata��F0H��ַ��ŵ��ֽ�
+  11                                                          //��ѹ��λΪ����(mV)
+  12          bit busy;
+  13          bit int0_isr_flag = 0;
+  14          
+  15          sbit PMU_EN = P3^3;
+  16          
+  17          sbit PIN_KEY = P3^2;
+  18          sbit PIN_CHARGING = P5^4;                     // Charging indicator
+  19          sbit USB_SWITCH1 = P5^5;                      // Unused
+  20          sbit USB_SWITCH2 = P5^6;                      // Ununed
+  21          
+  22          bit adc_req = 0;
+  23          bit charging_req = 0;
+  24          bit poweroff_req = 0;
+  25          
+  26          #define USB_MODE_NORMAL 3
+  27          #define USB_MODE_WIFI_CAM 1
+  28          #define USB_MODE_DIRECT 2
+  29          
+  30          //void setUSBMode(char dat)
+  31          //{
+  32          //  return;
+  33            /*
+  34            switch(dat)
+  35            {
+  36              case 1:
+  37                USB_SWITCH1 = 0;
+  38                USB_SWITCH2 = 0;
+  39                break;
+  40              case 2:
+  41                USB_SWITCH1 = 0;
+  42                USB_SWITCH2 = 1;
+  43                break;
+  44              case 3:
+  45                USB_SWITCH1 = 1;
+  46                USB_SWITCH2 = 0;
+  47                break;
+  48              default:
+  49                break;
+  50            }
+  51            */
+  52          //}
+  53          
+C51 COMPILER V9.60.7.0   MAIN                                                              09/14/2024 21:24:23 PAGE 2   
+
+  54          void UartIsr() interrupt 4
+  55          {
+  56   1          char c;
+  57   1          if (TI)
+  58   1          {
+  59   2              TI = 0;
+  60   2              busy = 0;
+  61   2          }
+  62   1          if (RI)
+  63   1          {
+  64   2              RI = 0;
+  65   2              c = SBUF;
+  66   2              switch(c)
+  67   2              {
+  68   3                case 0x58:
+  69   3                  adc_req = 1;
+  70   3                  break;
+  71   3                case 0x59:
+  72   3                  charging_req = 1;
+  73   3                  break;
+  74   3                case 0x6a:
+  75   3                  poweroff_req = 1;
+  76   3                  break;
+  77   3                case 0x11:
+  78   3                  //setUSBMode(USB_MODE_NORMAL);
+  79   3                  break;
+  80   3                case 0x12:
+  81   3                  //setUSBMode(USB_MODE_WIFI_CAM);
+  82   3                  break;
+  83   3                case 0x13:
+  84   3                  //setUSBMode(USB_MODE_DIRECT);
+  85   3                  break;
+  86   3              }
+  87   2          }
+  88   1      }
+  89          void INT0_Isr() interrupt 0
+  90          {
+  91   1          ;
+  92   1      }
+  93          
+  94          void UartInit()
+  95          {
+  96   1          SCON = 0x50;
+  97   1          TMOD = 0x00;
+  98   1          TL1 = BRT;
+  99   1          TH1 = BRT >> 8;
+ 100   1          TR1 = 1;
+ 101   1          AUXR = 0x40;
+ 102   1          busy = 0;
+ 103   1      }
+ 104          
+ 105          void UartSend(char dat)
+ 106          {
+ 107   1          while (busy);
+ 108   1          busy = 1;
+ 109   1          SBUF = dat;
+ 110   1      }
+ 111          
+ 112          void ADCInit()
+ 113          {
+ 114   1          P_SW2 |= 0x80;
+ 115   1          ADCTIM = 0x3f;                              //����ADC�ڲ�ʱ��
+C51 COMPILER V9.60.7.0   MAIN                                                              09/14/2024 21:24:23 PAGE 3   
+
+ 116   1          P_SW2 &= 0x7f;
+ 117   1      
+ 118   1          ADCCFG = 0x2f;                              //����ADCʱ��Ϊϵͳʱ��/2/16
+ 119   1          ADC_CONTR = 0x8f;                           //ʹ��ADCģ��,��ѡ���15ͨ��
+ 120   1      }
+ 121          
+ 122          int ADCRead()
+ 123          {
+ 124   1          int res;
+ 125   1      
+ 126   1          ADC_CONTR |= 0x40;                          //����ADת��
+ 127   1          _nop_();
+ 128   1          _nop_();
+ 129   1          while (!(ADC_CONTR & 0x20));                //��ѯADC��ɱ�־
+ 130   1          ADC_CONTR &= ~0x20;                         //����ɱ�־
+ 131   1          res = (ADC_RES << 8) | ADC_RESL;            //��ȡADC���
+ 132   1      
+ 133   1          return res;
+ 134   1      }
+ 135          
+ 136          void doADC()
+ 137          {
+ 138   1        int res;
+ 139   1        int vcc;
+ 140   1        int i;
+ 141   1      
+ 142   1        ADCRead();
+ 143   1        ADCRead();                                  //ǰ�������ݽ��鶪��
+ 144   1      
+ 145   1          res = 0;
+ 146   1          for (i=0; i<8; i++)
+ 147   1          {
+ 148   2              res += ADCRead();                       //��ȡ8������
+ 149   2          }
+ 150   1          res >>= 3;                                  //ȡƽ��ֵ
+ 151   1      
+ 152   1          vcc = (int)(1024L * *BGV / res);            //(10λADC�㷨)����VREF�ܽŵ�ѹ,����
+             -ص�ѹ
+ 153   1      //  vcc = (int)(4096L * *BGV / res);            //(12λADC�㷨)����VREF�ܽŵ�ѹ,����
+             -ص�ѹ
+ 154   1                                                      //ע��,�˵�ѹ�ĵ�λΪ����(mV)
+ 155   1          UartSend(vcc >> 8);                         //�����ѹֵ������
+ 156   1          UartSend(vcc);
+ 157   1      }
+ 158          void Delay5ms(void) //@11.0592MHz
+ 159          {
+ 160   1        unsigned char data i, j;
+ 161   1      
+ 162   1        _nop_();
+ 163   1        _nop_();
+ 164   1        i = 72;
+ 165   1        j = 205;
+ 166   1        do
+ 167   1        {
+ 168   2          while (--j);
+ 169   2        } while (--i);
+ 170   1      }
+ 171          void Delay50ms(void)  //@11.0592MHz
+ 172          {
+ 173   1        unsigned char data i, j, k;
+ 174   1      
+ 175   1        i = 3;
+C51 COMPILER V9.60.7.0   MAIN                                                              09/14/2024 21:24:23 PAGE 4   
+
+ 176   1        j = 207;
+ 177   1        k = 28;
+ 178   1        do
+ 179   1        {
+ 180   2          do
+ 181   2          {
+ 182   3            while (--k);
+ 183   3          } while (--j);
+ 184   2        } while (--i);
+ 185   1      }
+ 186          void Delay1000ms(void)  //@11.0592MHz
+ 187          {
+ 188   1        unsigned char data i, j, k;
+ 189   1      
+ 190   1        i = 57;
+ 191   1        j = 27;
+ 192   1        k = 112;
+ 193   1        do
+ 194   1        {
+ 195   2          do
+ 196   2          {
+ 197   3            while (--k);
+ 198   3          } while (--j);
+ 199   2        } while (--i);
+ 200   1      }
+ 201          
+ 202          
+ 203          void main()
+ 204          {
+ 205   1        unsigned char keytime = 0;
+ 206   1          PMU_EN = 0;
+ 207   1          PIN_CHARGING = 1;
+ 208   1          //setUSBMode(USB_MODE_NORMAL);
+ 209   1          P3M0 = 0x03; P3M1 = 0x03;
+ 210   1          P5M0 = 0x00; P5M1 = 0x00; 
+ 211   1      
+ 212   1          BGV = (int idata *)0xef;
+ 213   1          IT0 = 1;                                    //ʹ��INT0�½����ж�
+ 214   1          EX0 = 1;                                    //ʹ��INT0�ж�
+ 215   1          EA = 1;
+ 216   1          goto forcesleep;
+ 217   1          while (1)
+ 218   1          {
+ 219   2        sleep:
+ 220   2            poweroff_req = 0;
+ 221   2            Delay1000ms();
+ 222   2            Delay1000ms();
+ 223   2            Delay1000ms();
+ 224   2        forcesleep:
+ 225   2            ES = 0;
+ 226   2            TR1 = 0;
+ 227   2            ADC_CONTR = 0;
+ 228   2            PMU_EN = 0;;
+ 229   2            Delay50ms();
+ 230   2            if(PIN_KEY != 0)
+ 231   2            {
+ 232   3              _nop_();
+ 233   3              _nop_();
+ 234   3              PCON = 0x02;
+ 235   3              _nop_();
+ 236   3              _nop_();
+ 237   3            }
+C51 COMPILER V9.60.7.0   MAIN                                                              09/14/2024 21:24:23 PAGE 5   
+
+ 238   2            // ��鰴��ʱ��
+ 239   2            keytime = 0;
+ 240   2            while(PIN_KEY == 0)
+ 241   2            {
+ 242   3              Delay5ms();
+ 243   3              ++keytime;
+ 244   3              if(keytime == 180)
+ 245   3                break;
+ 246   3            }
+ 247   2            if(keytime != 180)
+ 248   2              goto forcesleep;
+ 249   2            PMU_EN = 1;
+ 250   2            //setUSBMode(USB_MODE_NORMAL);
+ 251   2            ADCInit();                                  //ADC��ʼ��
+ 252   2            UartInit();                                 //���ڳ�ʼ��
+ 253   2            ES = 1;
+ 254   2            keytime = 0;
+ 255   2      loop:
+ 256   2            if(poweroff_req)
+ 257   2              goto sleep;
+ 258   2            if(adc_req)
+ 259   2            {
+ 260   3              adc_req = 0;
+ 261   3              doADC();
+ 262   3            }
+ 263   2            if (charging_req)
+ 264   2            {
+ 265   3              charging_req = 0;
+ 266   3              if (PIN_CHARGING)
+ 267   3              {
+ 268   4                UartSend(0x00);
+ 269   4              }
+ 270   3              else
+ 271   3              {
+ 272   4                UartSend(0x01);
+ 273   4              }
+ 274   3            }
+ 275   2            if(PIN_KEY == 0)
+ 276   2            {
+ 277   3              keytime = 0;
+ 278   3              while(PIN_KEY == 0)
+ 279   3              {
+ 280   4                Delay50ms();
+ 281   4                ++keytime;
+ 282   4                if(poweroff_req)
+ 283   4                  goto sleep;
+ 284   4                if(adc_req)
+ 285   4                {
+ 286   5                  adc_req = 0;
+ 287   5                  doADC();
+ 288   5                }
+ 289   4                if(keytime == 190)
+ 290   4                  break;
+ 291   4              }
+ 292   3              if(keytime == 190)
+ 293   3                goto forcesleep;
+ 294   3            }
+ 295   2            goto loop;
+ 296   2          }
+ 297   1      }
+ 298          
+
+C51 COMPILER V9.60.7.0   MAIN                                                              09/14/2024 21:24:23 PAGE 6   
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    445    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      3       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      5    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
